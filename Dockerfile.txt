@@ -1,0 +1,53 @@
+# Stage 1: Dependency installation and Next.js build
+FROM node:18-alpine AS builder
+
+# Set working directory for the build stage
+WORKDIR /app
+
+# Copy package.json and lock file (yarn.lock or package-lock.json)
+# Using npm ci for cleaner installs and lockfile respect
+COPY package.json yarn.lock* ./
+
+# Install dependencies (including dev dependencies for build)
+RUN npm ci
+
+# Copy the rest of your application code
+COPY . .
+
+# Disable Next.js telemetry (optional, good for CI/CD)
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Build the Next.js application
+# 'npm run build' generates the .next folder and optimized static assets
+RUN npm run build
+
+# Stage 2: Production image (leaner, no dev dependencies)
+FROM node:18-alpine AS runner
+
+# Set working directory for the runtime stage
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV production
+
+# Disable Next.js telemetry for runtime (optional)
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# If your Next.js build uses the 'output: "standalone"' option in next.config.js,
+# you can copy the standalone output directly for a super lean image:
+# COPY --from=builder /app/.next/standalone ./
+# COPY --from=builder /app/.next/static ./.next/static
+# COPY --from=builder /app/public ./public
+
+# Otherwise, copy the necessary Next.js build artifacts and production dependencies
+# This path might vary slightly based on your Next.js version and config
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/public ./public # Copy static assets
+
+# Expose the port Next.js listens on (default 3000)
+EXPOSE 3000
+
+# Command to run the Next.js application in production
+CMD ["npm", "start"]
